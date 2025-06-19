@@ -1,6 +1,7 @@
 # import CNN
 import os
 import os
+import pandas as pd
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 from tensorflow.keras.models import load_model
@@ -25,15 +26,17 @@ def coarse_find(frame):
 CNN_path = "eye_tracking_model.keras"
 
 model = load_model(CNN_path)
-converter = tf.lite.TFLiteConverter.from_keras_model(model)
 
 video_path = "videos/2.mp4"
 cap = cv2.VideoCapture(video_path)
 
 if not cap.isOpened():
     raise IOError("Cannot open video")
-
+# importt eyedata frame
+data = pd.read_csv("output/eye_data.csv")
+frame_index = 0
 while True:
+    frame_index += 1
     start = time.time()
 
     ret, frame = cap.read()
@@ -61,6 +64,8 @@ while True:
     image = cv2.resize(image, (128, 128))
     # convert to array
     image = image.reshape(1, 128, 128, 1)
+    # normalize the image
+    image = image / 255.0
 
     end = time.time()
 
@@ -75,12 +80,15 @@ while True:
     pred_y = int(pred[1] * rescale + y)
     pred_w = int(pred[2] * rescale)
     pred_h = int(pred[3] * rescale)
-
+    pred_angle = int(pred[4])
+    pred_angle = (pred_angle*90+180) % 180
     # transform elipse
     pred_color = (290, 100, 100)
-    cv2.ellipse(frame, (pred_x, pred_y), (pred_w, pred_h), 0, 0, 360, pred_color, 1)
+    cv2.ellipse(frame, (pred_x, pred_y), (pred_w, pred_h), pred_angle, 0, 360, pred_color, 1)
     cv2.circle(frame, (pred_x, pred_y), 1, pred_color, -1)
 
+
+    end = time.time()
 
     # show the eye crop
 
