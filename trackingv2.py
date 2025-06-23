@@ -18,8 +18,8 @@ def coarse_find(frame):
     eyes = eye_cascade.detectMultiScale(
         gray,
         scaleFactor=1.05,
-        minNeighbors=3,
-        minSize=(100, 100)
+        minNeighbors=5,
+        minSize=(200, 200)
     )
     return eyes
 def remove_bright_spots(image, threshold=200, replace=0):
@@ -48,7 +48,7 @@ def find_dark_area(image):
     print(darkest_val)
     return darkest_square, darkest_val
     
-def threshold_images(image, dark_point, thresholds=[10, 15, 20, 25]):
+def threshold_images(image, dark_point, thresholds=[15, 20, 25, 30]):
     images = []
     h, w = image.shape
 
@@ -83,7 +83,7 @@ def threshold_images(image, dark_point, thresholds=[10, 15, 20, 25]):
 
     return images
 
-def get_contours(images, min_area=50, margin=3):
+def get_contours(images, min_area=100, margin=3):
 
     filtered_contours = []
     contour_images    = []
@@ -94,6 +94,7 @@ def get_contours(images, min_area=50, margin=3):
 
         kept = []
         for cnt in cnts:
+            all_pts = cnt.reshape(-1, 2)
             if cv2.contourArea(cnt) < min_area:
                 continue
             pts = cnt.reshape(-1, 2)
@@ -102,19 +103,43 @@ def get_contours(images, min_area=50, margin=3):
             or (pts[:,1] < margin).any() or (pts[:,1] > h - margin).any():
                 continue
             kept.append(cnt)
+        # combine all contours into one
+        if len(kept) > 0:
+            all_pts = np.vstack([c.reshape(-1,2) for c in kept])
+            all_pts = all_pts.reshape(-1,1,2).astype(np.int32)
+        hull = cv2.convexHull(all_pts)
 
         # draw kept contours onto a blank image
         ci = np.zeros_like(img)
-        cv2.drawContours(ci, kept, -1, 255, 1)
+        cv2.drawContours(ci, hull, -1, 255, 2)
 
         filtered_contours.append(kept)
         contour_images.append(ci)
 
+        
+
     return filtered_contours, contour_images
 
+def fit_ellipse(contour):
+    """
+    Fit an ellipse to the largest contour.
+    Returns the ellipse parameters (x, y, w, h, angle).
+    """
+
+    all_pts = np.vstack([cnt.reshape(-1,2) for cnt in contour]).astype(np.int32)
+
+    # 2) Reshape into the format cv2 expects: (K,1,2)
+    all_pts = all_pts.reshape(-1,1,2)
+
+    # 3) Fit the ellipse
+    ellipse = cv2.fitEllipse(all_pts)    
+    x, y = ellipse[0]
+    w, h = ellipse[1]
+    angle = ellipse[2]
+    return (x, y, w, h, angle)
 if __name__ == "__main__":
 
-    video_path = "videos/igor2.mp4"
+    video_path = "videos/4.mp4"
     cap = cv2.VideoCapture(video_path)
     frame_idx = 0
     prev_eyes = None
@@ -149,22 +174,42 @@ if __name__ == "__main__":
 
 
 
-
-
         dx, dy, dw, dh = dark_square
 # Threshold the image using multiple thresholds
         thresholded_images = threshold_images(eye_gray, dark_val)
         contours, contour_images = get_contours(thresholded_images)
+        ellipse_images = []
+        for cnt_list in contours:
+            # blank single-channel canvas
+            temp_img = eye_gray.copy()
 
-        output_img = contour_images
-        # Stack thresholded images side by side for visualization
-        stacked = np.hstack(contour_images)
+            if len(cnt_list) > 0:
+                # combine all kept contours into one (K,1,2) array
+                all_pts = np.vstack([c.reshape(-1,2) for c in cnt_list])
+                all_pts = all_pts.reshape(-1,1,2).astype(np.int32)
 
-        # Optional: Resize for easier viewing (remove if not needed)
-        stacked_resized = cv2.resize(stacked, (1024,512))
+                # fitEllipse wants a single ndarray of points
+                box = cv2.fitEllipse(all_pts)
+                # draw in white on the gray canvas
+                cv2.ellipse(temp_img, box, 255, 2)
 
-        # Show the combined thresholded images
-        cv2.imshow("Thresholded Views", stacked_resized)
+            ellipse_images.append(temp_img)
+
+        # now stack threshold / contour / ellipse into a 3-row grid
+        N = len(thresholded_images)  # should be 4
+        H, W = thresholded_images[0].shape
+
+        # 3 rows this time
+        grid = np.zeros((3 * H, N * W), dtype=np.uint8)
+
+        for i in range(N):
+            grid[0   :  H, i*W:(i+1)*W] = thresholded_images[i]
+            grid[H   :2*H, i*W:(i+1)*W] = contour_images[i]
+            grid[2*H :3*H, i*W:(i+1)*W] = ellipse_images[i]
+
+        # resize for display if you like
+        grid_disp = cv2.resize(grid, (1024, 512))  # just keep aspect
+        cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
 
 
         frame_idx += 1
