@@ -18,8 +18,8 @@ def coarse_find(frame):
     eyes = eye_cascade.detectMultiScale(
         gray,
         scaleFactor=1.05,
-        minNeighbors=5,
-        minSize=(200, 200)
+        minNeighbors=3,
+        minSize=(100, 100)
     )
     return eyes
 def remove_bright_spots(image, threshold=200, replace=0):
@@ -103,6 +103,8 @@ def get_contours(images, min_area=100, margin=3):
             or (pts[:,1] < margin).any() or (pts[:,1] > h - margin).any():
                 continue
             kept.append(cnt)
+        # keep two largest contours
+        kept = sorted(kept, key=cv2.contourArea, reverse=True)[:1]
         # combine all contours into one
         if len(kept) > 0:
             all_pts = np.vstack([c.reshape(-1,2) for c in kept])
@@ -120,26 +122,30 @@ def get_contours(images, min_area=100, margin=3):
 
     return filtered_contours, contour_images
 
-def fit_ellipse(contour):
-    """
-    Fit an ellipse to the largest contour.
-    Returns the ellipse parameters (x, y, w, h, angle).
-    """
+def fit_ellipse(contour, bias_factor=-1):
+    pts = np.vstack([c.reshape(-1,2) for c in contour])
+    
+    # 2) Compute the halfway‐down (mean Y) and pick bottom half
+    mean_y     = np.mean(pts[:,1])
+    bottom_pts = pts[pts[:,1] > mean_y]
+    
+    if bottom_pts.size and bias_factor > 0:
+        weighted_pts = np.concatenate(
+            [pts] + [bottom_pts]*bias_factor,
+            axis=0
+        )
+    else:
+        weighted_pts = pts
+    
+    weighted_pts = weighted_pts.reshape(-1,1,2).astype(np.int32)
+    # remove points above the mean Y
+    # weighted_pts = weighted_pts[weighted_pts[:,0,1] > mean_y]
+    
+    return cv2.fitEllipse(weighted_pts)
 
-    all_pts = np.vstack([cnt.reshape(-1,2) for cnt in contour]).astype(np.int32)
-
-    # 2) Reshape into the format cv2 expects: (K,1,2)
-    all_pts = all_pts.reshape(-1,1,2)
-
-    # 3) Fit the ellipse
-    ellipse = cv2.fitEllipse(all_pts)    
-    x, y = ellipse[0]
-    w, h = ellipse[1]
-    angle = ellipse[2]
-    return (x, y, w, h, angle)
 if __name__ == "__main__":
 
-    video_path = "videos/4.mp4"
+    video_path = "videos/2.mp4"
     cap = cv2.VideoCapture(video_path)
     frame_idx = 0
     prev_eyes = None
@@ -150,8 +156,8 @@ if __name__ == "__main__":
         ret, frame = cap.read()
         if not ret:
             break
-        # frame = frame[:frame.shape[0] // 2, :]
-        frame = frame[frame.shape[0] // 2:, :]
+        frame = frame[:frame.shape[0] // 2, :]
+        # frame = frame[frame.shape[0] // 2:, :]
         eyes = coarse_find(frame)
         # if can't find eyes use previous location 
         # TODO: can just use prev elipse so don't have to recalculate
@@ -184,13 +190,8 @@ if __name__ == "__main__":
             temp_img = eye_gray.copy()
 
             if len(cnt_list) > 0:
-                # combine all kept contours into one (K,1,2) array
-                all_pts = np.vstack([c.reshape(-1,2) for c in cnt_list])
-                all_pts = all_pts.reshape(-1,1,2).astype(np.int32)
-
-                # fitEllipse wants a single ndarray of points
-                box = cv2.fitEllipse(all_pts)
-                # draw in white on the gray canvas
+                # fit ellipse to the largest contour
+                box = fit_ellipse(cnt_list)
                 cv2.ellipse(temp_img, box, 255, 2)
 
             ellipse_images.append(temp_img)
@@ -201,7 +202,6 @@ if __name__ == "__main__":
 
         # 3 rows this time
         grid = np.zeros((3 * H, N * W), dtype=np.uint8)
-
         for i in range(N):
             grid[0   :  H, i*W:(i+1)*W] = thresholded_images[i]
             grid[H   :2*H, i*W:(i+1)*W] = contour_images[i]
