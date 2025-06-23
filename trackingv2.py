@@ -8,8 +8,6 @@ from math import pi
 import matplotlib.pyplot as plt
 mask = np.zeros((128, 128), dtype=np.uint8)
 
-
-#
 def coarse_find(frame):
     eye_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + 'haarcascade_eye.xml'
@@ -22,6 +20,7 @@ def coarse_find(frame):
         minSize=(100, 100)
     )
     return eyes
+
 def remove_bright_spots(image, threshold=200, replace=0):
     """
     Remove bright spots from the image by setting pixels above a certain threshold to black.
@@ -45,10 +44,9 @@ def find_dark_area(image):
             if mean_val < darkest_val:
                 darkest_val = mean_val
                 darkest_square = (i*grid_h, j*grid_w, grid_h, grid_w)
-    print(darkest_val)
     return darkest_square, darkest_val
     
-def threshold_images(image, dark_point, thresholds=[15, 20, 25, 30]):
+def threshold_images(image, dark_point, thresholds=[15, 30, 45, 0]):
     images = []
     h, w = image.shape
 
@@ -114,7 +112,6 @@ def get_contours(images, min_area=100, margin=3):
         # draw kept contours onto a blank image
         ci = np.zeros_like(img)
         cv2.drawContours(ci, hull, -1, 255, 2)
-
         filtered_contours.append(kept)
         contour_images.append(ci)
 
@@ -140,7 +137,8 @@ def fit_ellipse(contour, bias_factor=-1):
     weighted_pts = weighted_pts.reshape(-1,1,2).astype(np.int32)
     # remove points above the mean Y
     # weighted_pts = weighted_pts[weighted_pts[:,0,1] > mean_y]
-    
+    if len(weighted_pts) < 5:
+        return None
     return cv2.fitEllipse(weighted_pts)
 
 if __name__ == "__main__":
@@ -150,8 +148,8 @@ if __name__ == "__main__":
     frame_idx = 0
     prev_eyes = None
     start = time.time()
-    prev_elipse = None
     start_time = time.time()
+    prev_elipse = None
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -169,7 +167,7 @@ if __name__ == "__main__":
             continue
         x, y, w, h = eyes[0]
         size = max(w, h)
-        eye_crop = frame[y:y+size, x:x+size]
+        eye_crop = frame[y:y+size, x:x+size].copy()
         eye_crop = remove_bright_spots(eye_crop, threshold=220, replace=100)
         eye_gray = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
 
@@ -177,27 +175,28 @@ if __name__ == "__main__":
         
         # plot dark square
         
-
-
-
-        dx, dy, dw, dh = dark_square
 # Threshold the image using multiple thresholds
         thresholded_images = threshold_images(eye_gray, dark_val)
         contours, contour_images = get_contours(thresholded_images)
         ellipse_images = []
+        elipses = []
         for cnt_list in contours:
             # blank single-channel canvas
             temp_img = eye_gray.copy()
 
-            if len(cnt_list) > 0:
+            if len(cnt_list) == 0:
+                elipses.append(None)
+                ellipse_images.append(temp_img)
+                continue
+            
                 # fit ellipse to the largest contour
-                box = fit_ellipse(cnt_list)
-                cv2.ellipse(temp_img, box, 255, 2)
+            box = fit_ellipse(cnt_list)
+            cv2.ellipse(temp_img, box, 255, 2)
+            elipses.append(box)
 
             ellipse_images.append(temp_img)
 
-        # now stack threshold / contour / ellipse into a 3-row grid
-        N = len(thresholded_images)  # should be 4
+        N = len(thresholded_images) 
         H, W = thresholded_images[0].shape
 
         # 3 rows this time
@@ -207,16 +206,82 @@ if __name__ == "__main__":
             grid[H   :2*H, i*W:(i+1)*W] = contour_images[i]
             grid[2*H :3*H, i*W:(i+1)*W] = ellipse_images[i]
 
+
+
         # resize for display if you like
         grid_disp = cv2.resize(grid, (1024, 512))  # just keep aspect
         cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
+        percents = []
+        for i in range(4):
+            eye_thresh   = thresholded_images[i]
+            ellipse      = elipses[i]
+            if ellipse is None:
+                percents.append(0)
+                continue
 
+            # build filled mask of the ellipse
+            mask = np.zeros_like(eye_thresh)
+            (cx, cy), (w, h), ang = ellipse
+            cv2.ellipse(mask,
+                        (int(cx), int(cy)),
+                        (int(w/2), int(h/2)),
+                        ang, 0, 360,
+                        255, -1)
+
+            white_pixels = cv2.countNonZero(cv2.bitwise_and(eye_thresh, mask))
+            total_pixels = cv2.countNonZero(mask)
+            coverage     = (white_pixels/total_pixels)*100 if total_pixels>0 else 0
+
+            # simple shape metric: how close axes are
+            roundness    = min(w, h)/max(w, h) if max(w,h)>0 else 0
+
+            percents.append(coverage + roundness*500)
+
+        # pick best
+        if not any(elipses):
+            # use previous if no valid ellipse found
+            if prev_elipse is not None:
+                best_ellipse, prev_x, prev_y = prev_elipse
+                x, y = prev_x, prev_y
+
+
+        best_idx     = int(np.argmax(percents))
+        best_ellipse = elipses[best_idx]
+
+        # fallback to previous if current is still None
+        if best_ellipse is None:
+            if prev_ellipse is not None:
+                best_ellipse, prev_x, prev_y = prev_ellipse
+                x, y = prev_x, prev_y
+            else:
+                print("No valid ellipse yet")
+                continue
+        else:
+            # remember for next frame
+            prev_ellipse = (best_ellipse, x, y)
+
+        # shift ellipse back into full‐frame coords
+        (cx, cy), (w, h), ang = best_ellipse
+        full_ellipse = (
+            (cx + x, cy + y),
+            (w, h),
+            ang
+        )
+
+    
+
+        cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
+        cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        # cv2.rectangle(frame, (x, y), (x + size, y + size), (255, 0, 0), 2)
+        cv2.imshow("Eye Tracking", frame)
 
         frame_idx += 1
+        prev_elipse = (full_ellipse, x, y)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-    # save video
     end_time = time.time()
-    print(f"FPS: {frame_idx / (end_time - start_time):.2f}")
+    print(f"Processed {frame_idx} frames in {end_time - start_time:.2f} seconds.")
+    print(f"Average FPS: {frame_idx / (end_time - start_time):.2f}")
     cap.release()
     cv2.destroyAllWindows()

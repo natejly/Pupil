@@ -7,7 +7,21 @@ import math
 from math import pi
 import matplotlib.pyplot as plt
 mask = np.zeros((128, 128), dtype=np.uint8)
-
+def find_dark_area(image):
+    num_grids = 9
+    h, w = image.shape[:2]
+    grid_h = h // num_grids
+    grid_w = w // num_grids 
+    darkest_val = 255
+    darkest_square = None
+    for i in range(num_grids):
+        for j in range(num_grids):
+            grid = image[i*grid_h:(i+1)*grid_h, j*grid_w:(j+1)*grid_w]
+            mean_val = np.mean(grid)
+            if mean_val < darkest_val:
+                darkest_val = mean_val
+                darkest_square = (i*grid_h, j*grid_w, grid_h, grid_w)
+    return darkest_square, darkest_val
 
 #
 def coarse_find(frame):
@@ -115,12 +129,14 @@ if __name__ == "__main__":
         images = []
         eye_gray = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
         to_save = eye_gray.copy()
-        thresholds = [45, 55, 60, 40]  # Low, Medium, High
         ellipses = []
         mask_images = []
+        dark_square, dark_val = find_dark_area(eye_gray)
+        thresholds = [10, 20, 30, 35]  # Low, Medium, High
+
         for i in range(4):
             image = eye_gray.copy()
-            _, eye_thresh = cv2.threshold(image, thresholds[i], 100, cv2.THRESH_BINARY_INV)
+            _, eye_thresh = cv2.threshold(image, thresholds[i] + dark_val, 100, cv2.THRESH_BINARY_INV)
 
             h, w = eye_thresh.shape
             mask = np.zeros((h + 2, w + 2), np.uint8)
@@ -270,7 +286,7 @@ if __name__ == "__main__":
                 continue
 
         # average best and prev ellipse
-        multiplier = .25
+        multiplier = 0
         if prev_elipse is not None:
             best_ellipse = (
                 ((best_ellipse[0][0] + prev_elipse[0][0]*multiplier) / (1+multiplier), (best_ellipse[0][1] + prev_elipse[0][1]*multiplier) / (1+multiplier)),
@@ -283,7 +299,7 @@ if __name__ == "__main__":
         
 
         frame[y:y+h, x:x+w] = eye_crop
-
+        # cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
         cv2.imshow("Processed Frame", frame)
         # save the frame
         if good_frame:
