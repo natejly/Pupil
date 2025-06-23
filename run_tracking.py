@@ -115,7 +115,7 @@ if __name__ == "__main__":
         images = []
         eye_gray = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
         to_save = eye_gray.copy()
-        thresholds = [45, 55, 60, 70]  # Low, Medium, High
+        thresholds = [45, 55, 60, 40]  # Low, Medium, High
         ellipses = []
         mask_images = []
         for i in range(4):
