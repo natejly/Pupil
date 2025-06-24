@@ -308,7 +308,7 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
 
 def main():
     video_path = "videos/igor1.mp4"
-    TOP = False
+    TOP = True
     # for alphas closer to 1 means bias more to current frame
     #.9 is good
     center_alpha = .9
