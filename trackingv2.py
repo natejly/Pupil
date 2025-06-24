@@ -51,7 +51,7 @@ def threshold_images(image, dark_point, thresholds=[0, 5, 10, 15, 20, 25, 30, 35
     h, w = image.shape
 
     # 1) Pre-smooth the grayscale to reduce sensor noise
-    denoised = cv2.GaussianBlur(image, (5, 5), 0)
+    denoised = cv2.GaussianBlur(image, (5, 5), 0)   
 
     # small kernel for morphology
     kernel = np.ones((3, 3), np.uint8)
@@ -147,6 +147,10 @@ if __name__ == "__main__":
     prev_array = []
     prev_ellipse = None
     video_path = "videos/2.mp4"
+    # thresholds=[0, 5, 10, 15, 20, 25, 30, 35, 40, 50]
+    # brute force this for now 
+    thresholds = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48]
+    TOP = True
     cap = cv2.VideoCapture(video_path)
     frame_idx = 0
     prev_eyes = None
@@ -156,8 +160,10 @@ if __name__ == "__main__":
         ret, frame = cap.read()
         if not ret:
             break
-        frame = frame[:frame.shape[0] // 2, :]
-        # frame = frame[frame.shape[0] // 2:, :]
+        if TOP:
+            frame = frame[:frame.shape[0] // 2, :]
+        else:
+            frame = frame[frame.shape[0] // 2:, :]
         eyes = coarse_find(frame)
         # if can't find eyes use previous location 
         # TODO: can just use prev elipse so don't have to recalculate
@@ -178,7 +184,7 @@ if __name__ == "__main__":
         # plot dark square
         
 # Threshold the image using multiple thresholds
-        thresholded_images = threshold_images(eye_gray, dark_val)
+        thresholded_images = threshold_images(eye_gray, dark_val, thresholds=thresholds)
         contours, contour_images = get_contours(thresholded_images)
         ellipse_images = []
         ellipses = []
@@ -288,7 +294,7 @@ if __name__ == "__main__":
                     # resize for display if you like
         grid_disp = cv2.resize(grid, (1024, 512))  # just keep aspect
         cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
-        cv2.ellipse(frame, full_ellipse, (0, 255, 0), 1)
+        # cv2.ellipse(frame, full_ellipse, (0, 255, 0), 1)
         # plot center point
         cv2.circle(frame, (int(cx + x), int(cy + y)), 3, (0, 0, 255), -1)
         cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
