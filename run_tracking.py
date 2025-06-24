@@ -82,17 +82,20 @@ def longest_nonzero_segment(arr):
 
 if __name__ == "__main__":
     # get first arg
-    if len(sys.argv) != 3:
-        print("Usage: python pupil.py <video_path> <-r/-c>")
-    video_path = sys.argv[1]
-    if sys.argv[2] == "r":
-        clean = False
-    elif sys.argv[2] == "c":
-        clean = True
-    # video_path = f"videos/{video_path}.mp4"
-    if not os.path.exists(video_path):
-        print(f"Video {video_path} does not exist")
-        sys.exit(1)
+    # if len(sys.argv) != 3:
+    #     print("Usage: python pupil.py <video_path> <-r/-c>")
+    # video_path = sys.argv[1]
+    # if sys.argv[2] == "r":
+    #     clean = False
+    # elif sys.argv[2] == "c":
+    #     clean = True
+    # # video_path = f"videos/{video_path}.mp4"
+    # if not os.path.exists(video_path):
+    #     print(f"Video {video_path} does not exist")
+    #     sys.exit(1)
+    video_path = "videos/2.mp4"
+
+    clean = True
     cap = cv2.VideoCapture(video_path)
 
     if not os.path.exists("output"):

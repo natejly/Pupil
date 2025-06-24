@@ -17,7 +17,7 @@ def coarse_find(frame):
         gray,
         scaleFactor=1.05,
         minNeighbors=3,
-        minSize=(100, 100)
+        minSize=(150, 150)
     )
     return eyes
 
@@ -46,7 +46,7 @@ def find_dark_area(image):
                 darkest_square = (i*grid_h, j*grid_w, grid_h, grid_w)
     return darkest_square, darkest_val
     
-def threshold_images(image, dark_point, thresholds=[15, 30, 45, 0]):
+def threshold_images(image, dark_point, thresholds=[0, 5, 10, 15, 20, 25, 30, 35, 40, 50]):
     images = []
     h, w = image.shape
 
@@ -81,7 +81,7 @@ def threshold_images(image, dark_point, thresholds=[15, 30, 45, 0]):
 
     return images
 
-def get_contours(images, min_area=100, margin=3):
+def get_contours(images, min_area=1500, margin=3):
 
     filtered_contours = []
     contour_images    = []
@@ -107,6 +107,8 @@ def get_contours(images, min_area=100, margin=3):
         if len(kept) > 0:
             all_pts = np.vstack([c.reshape(-1,2) for c in kept])
             all_pts = all_pts.reshape(-1,1,2).astype(np.int32)
+        else:
+            all_pts = np.array([], dtype=np.int32).reshape(-1,1,2)
         hull = cv2.convexHull(all_pts)
 
         # draw kept contours onto a blank image
@@ -142,14 +144,14 @@ def fit_ellipse(contour, bias_factor=-1):
     return cv2.fitEllipse(weighted_pts)
 
 if __name__ == "__main__":
-
+    prev_array = []
+    prev_ellipse = None
     video_path = "videos/2.mp4"
     cap = cv2.VideoCapture(video_path)
     frame_idx = 0
     prev_eyes = None
     start = time.time()
     start_time = time.time()
-    prev_elipse = None
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -179,47 +181,40 @@ if __name__ == "__main__":
         thresholded_images = threshold_images(eye_gray, dark_val)
         contours, contour_images = get_contours(thresholded_images)
         ellipse_images = []
-        elipses = []
+        ellipses = []
         for cnt_list in contours:
             # blank single-channel canvas
             temp_img = eye_gray.copy()
 
             if len(cnt_list) == 0:
-                elipses.append(None)
+                ellipses.append(None)
                 ellipse_images.append(temp_img)
                 continue
             
-                # fit ellipse to the largest contour
             box = fit_ellipse(cnt_list)
             cv2.ellipse(temp_img, box, 255, 2)
-            elipses.append(box)
+            ellipses.append(box)
 
             ellipse_images.append(temp_img)
 
+
+
+
         N = len(thresholded_images) 
-        H, W = thresholded_images[0].shape
-
-        # 3 rows this time
-        grid = np.zeros((3 * H, N * W), dtype=np.uint8)
-        for i in range(N):
-            grid[0   :  H, i*W:(i+1)*W] = thresholded_images[i]
-            grid[H   :2*H, i*W:(i+1)*W] = contour_images[i]
-            grid[2*H :3*H, i*W:(i+1)*W] = ellipse_images[i]
-
-
-
-        # resize for display if you like
-        grid_disp = cv2.resize(grid, (1024, 512))  # just keep aspect
-        cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
         percents = []
-        for i in range(4):
-            eye_thresh   = thresholded_images[i]
-            ellipse      = elipses[i]
+        for i in range(N):
+            eye_thresh = thresholded_images[i]
+            ellipse     = ellipses[i]
             if ellipse is None:
                 percents.append(0)
                 continue
+            # get height to width ratio
+            ellipse_ratio = ellipse[1][1] / ellipse[1][0]
+            # if ratio is too high, skip
+            if ellipse_ratio > 1.75 or ellipse_ratio < 0.8:
+                percents.append(0)
+                continue
 
-            # build filled mask of the ellipse
             mask = np.zeros_like(eye_thresh)
             (cx, cy), (w, h), ang = ellipse
             cv2.ellipse(mask,
@@ -228,37 +223,51 @@ if __name__ == "__main__":
                         ang, 0, 360,
                         255, -1)
 
-            white_pixels = cv2.countNonZero(cv2.bitwise_and(eye_thresh, mask))
-            total_pixels = cv2.countNonZero(mask)
-            coverage     = (white_pixels/total_pixels)*100 if total_pixels>0 else 0
+            inside_total  = cv2.countNonZero(mask)
+            inside_white  = cv2.countNonZero(cv2.bitwise_and(eye_thresh, mask))
+            inside_ratio  = inside_white / inside_total if inside_total>0 else 0
 
-            # simple shape metric: how close axes are
-            roundness    = min(w, h)/max(w, h) if max(w,h)>0 else 0
+            outside_mask  = cv2.bitwise_not(mask)
+            outside_total = cv2.countNonZero(outside_mask)
+            # invert thresholded so white→0, black→255, then AND
+            outside_black = cv2.countNonZero(cv2.bitwise_and(cv2.bitwise_not(eye_thresh), outside_mask))
+            outside_ratio = outside_black / outside_total if outside_total>0 else 0
 
-            percents.append(coverage + roundness*500)
-
-        # pick best
-        if not any(elipses):
-            # use previous if no valid ellipse found
-            if prev_elipse is not None:
-                best_ellipse, prev_x, prev_y = prev_elipse
-                x, y = prev_x, prev_y
-
+            percent = ((inside_ratio + outside_ratio*.25) / 1.5)
+            roundness = 1.0 - abs(w - h) / max(w, h)
+            percents.append(percent + roundness*0)
 
         best_idx     = int(np.argmax(percents))
-        best_ellipse = elipses[best_idx]
+        best_ellipse = ellipses[best_idx]
 
         # fallback to previous if current is still None
         if best_ellipse is None:
             if prev_ellipse is not None:
+                print("Using previous ellipse")
                 best_ellipse, prev_x, prev_y = prev_ellipse
                 x, y = prev_x, prev_y
             else:
                 print("No valid ellipse yet")
                 continue
-        else:
-            # remember for next frame
-            prev_ellipse = (best_ellipse, x, y)
+        if prev_ellipse is not None:
+            (pcx, pcy), (pw, ph), pang = prev_ellipse[0]
+            (cx, cy), (w, h), ang = best_ellipse
+            # check tthat ellipse is not telleporting
+            if abs(cy - pcy) > 100 or abs(cx - pcx) > 100:
+                print(f"Teleporting detected, using previous ellipse{frame_idx}")
+                best_ellipse = prev_ellipse[0]
+                x, y = prev_ellipse[1], prev_ellipse[2]
+            # check that current area is withing 75% of previous size
+            elif (w * h) < 0.3 * (pw * ph):
+                print(f"Current ellipse too small, using previous ellipse{frame_idx}")
+                best_ellipse = prev_ellipse[0]
+                x, y = prev_ellipse[1], prev_ellipse[2]
+
+
+
+
+        # if current
+        prev_ellipse = (best_ellipse, x, y)
 
         # shift ellipse back into full‐frame coords
         (cx, cy), (w, h), ang = best_ellipse
@@ -268,16 +277,27 @@ if __name__ == "__main__":
             ang
         )
 
-    
 
-        cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
+        H, W = thresholded_images[0].shape
+        # 3 rows this time
+        grid = np.zeros((3 * H, N * W), dtype=np.uint8)
+        for i in range(N):
+            grid[0   :  H, i*W:(i+1)*W] = thresholded_images[i]
+            grid[H   :2*H, i*W:(i+1)*W] = contour_images[i]
+            grid[2*H :3*H, i*W:(i+1)*W] = ellipse_images[i]
+                    # resize for display if you like
+        grid_disp = cv2.resize(grid, (1024, 512))  # just keep aspect
+        cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
+        cv2.ellipse(frame, full_ellipse, (0, 255, 0), 1)
+        # plot center point
+        cv2.circle(frame, (int(cx + x), int(cy + y)), 3, (0, 0, 255), -1)
         cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         # cv2.rectangle(frame, (x, y), (x + size, y + size), (255, 0, 0), 2)
         cv2.imshow("Eye Tracking", frame)
 
         frame_idx += 1
-        prev_elipse = (full_ellipse, x, y)
+        prev_array.append(best_ellipse)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     end_time = time.time()
