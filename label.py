@@ -35,8 +35,20 @@ if __name__ == "__main__":
         sys.exit(1)
     # number of frames in frames_folder
     num_frames = len([f for f in os.listdir(frames_folder) if f.endswith('.png')])
-    for i in range(num_frames):
+    if not os.path.exists("output"):
+        os.makedirs("output")
+    if not os.path.exists("checks"):
+        os.makedirs("checks")
+    # if output/eye_data.csv exists, delete it
+    if os.path.exists("output/eye_data.csv"):
+        os.remove("output/eye_data.csv")
+    with open("output/eye_data.csv", "w") as f:
+        f.write("frame_idx,x,y,w,h,ellipse_x,ellipse_y,ellipse_w,ellipse_h,ellipse_angle\n")
 
+    for i in range(num_frames):
+        # status update
+        if i % 100 == 0:
+            print(f"Processing frame {i}/{num_frames}...")
         frame_path = os.path.join(frames_folder, f"{i}.png")
         frame = cv2.imread(frame_path)
         eyes = coarse_find(frame)
@@ -50,7 +62,7 @@ if __name__ == "__main__":
 
         eye_gray, x, y, size = process_eye_crop(frame, eyes)
         dark_square, dark_val = find_dark_area(eye_gray)
-        
+        to_save = eye_gray.copy()
         thresholded_images, contour_images, ellipse_images, ellipses = generate_ellipse_candidates(
             eye_gray, dark_val, thresholds)
         
@@ -63,16 +75,23 @@ if __name__ == "__main__":
             
         prev_ellipse = (best_ellipse, x, y)
         
-        full_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema, 
+        final_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema, 
                                           center_alpha, size_alpha, rotation_alpha)
         
-        (cx, cy), (w, h), ang = best_ellipse
-        
-        display_results(frame, thresholded_images, contour_images, ellipse_images,
-                       full_ellipse, cx, cy, x, y, frame_idx)
+        (cx, cy), (w, h), ang = final_ellipse
+        cv2.ellipse(eye_gray, (int(cx-x), int(cy-y)), (int(w/2), int(h/2)), ang, 0, 360, (0, 255, 0), 2)
 
+        cv2.imshow("eye_crop", eye_gray)
         frame_idx += 1
-        prev_array.append(best_ellipse)
+        prev_array.append(final_ellipse)
+        cv2.imwrite(f"output/{frame_idx}.png", to_save)
+        # save frame index, eye coordinates, and ellipse parameters
+        cv2.imwrite(f"checks/eye_{frame_idx}.png", eye_gray)
+
+        with open("output/eye_data.csv", "a") as f:
+            f.write(f"{frame_idx},{x},{y},{w},{h},"
+                    f"{final_ellipse[0][0]},{final_ellipse[0][1]},"
+                        f"{final_ellipse[1][0]},{final_ellipse[1][1]},{final_ellipse[2]}\n")
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 

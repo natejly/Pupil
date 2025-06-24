@@ -7,7 +7,6 @@ import math
 from math import pi
 import matplotlib.pyplot as plt
 mask = np.zeros((128, 128), dtype=np.uint8)
-
 def coarse_find(frame):
     """Uses Haar filters to crop pic in to the eye"""
     eye_cascade = cv2.CascadeClassifier(
@@ -136,14 +135,15 @@ def check_flip(ellipse):
     "Normalizes angles because openCV fits weirdly. Mainly for training"
     (cx, cy), (w, h), ang = ellipse
 
-    if w < h:
-        w, h = h, w
-        ang += 90
-    if ang >= 90:
+    # if w < h:
+    #     w, h = h, w
+    #     ang += 90
+    # if ang >= 90:
+    #     ang -= 180
+    # elif ang < -90:
+    #     ang += 180
+    if ang > 90:
         ang -= 180
-    elif ang < -90:
-        ang += 180
-
     return (cx, cy), (w, h), ang
 
 def prepare_frame(frame, top_half=False):
@@ -225,14 +225,15 @@ def calculate_ellipse_scores(thresholded_images, ellipses):
     
     return percents
 
-def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx):
+def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug=False):
     "More elipse filtering and uses the previous ellipse if we violate conditions"
     best_idx = int(np.argmax(percents))
     best_ellipse = ellipses[best_idx]
 
     if best_ellipse is None:
         if prev_ellipse is not None:
-            print("Using previous ellipse")
+            if debug:
+                print(f"Using previous ellipse {frame_idx}")
             best_ellipse, prev_x, prev_y = prev_ellipse
             x, y = prev_x, prev_y
         else:
@@ -244,13 +245,15 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx):
         (cx, cy), (w, h), ang = best_ellipse
         # Center moves too much
         if abs(cy - pcy) > 100 or abs(cx - pcx) > 100:
-            print(f"Teleporting detected, using previous ellipse{frame_idx}")
+            if debug:
+                print(f"Teleporting detected, using previous ellipse {frame_idx}")
             best_ellipse = prev_ellipse[0]
             x, y = prev_ellipse[1], prev_ellipse[2]
 
         # Too small
         elif (w * h) < 0.3 * (pw * ph):
-            print(f"Current ellipse too small, using previous ellipse{frame_idx}")
+            if debug:
+                print(f"Current ellipse too small, using previous ellipse {frame_idx}")
             best_ellipse = prev_ellipse[0]
             x, y = prev_ellipse[1], prev_ellipse[2]
     
@@ -260,7 +263,6 @@ def apply_smoothing(best_ellipse, x, y, ema, center_alpha, size_alpha, rotation_
     "EMA for smoothing"
     best_ellipse = check_flip(best_ellipse)
     (cx, cy), (w, h), ang = best_ellipse
-
     alphas = np.array([
         center_alpha,
         center_alpha,
@@ -277,7 +279,6 @@ def apply_smoothing(best_ellipse, x, y, ema, center_alpha, size_alpha, rotation_
         ema = alphas * current + (1.0 - alphas) * ema
 
     sm_cx, sm_cy, sm_w, sm_h, sm_ang = ema
-
     full_ellipse = (
         (float(sm_cx), float(sm_cy)),
         (float(sm_w),  float(sm_h)),
@@ -307,15 +308,17 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
     cv2.imshow("Eye Tracking", frame)
 
 def main():
-    video_path = "videos/igor1.mp4"
+    video_path = "videos/2.mp4"
     TOP = True
+    debug = False
     # for alphas closer to 1 means bias more to current frame
     #.9 is good
-    center_alpha = .9
+    # can have heuristic where tthinner elipse lower the center alpha 
+    center_alpha = .75
     #.25 is good
     size_alpha = .25
     # use 1
-    rotation_alpha = 1
+    rotation_alpha = .99
     prev_array = []
     prev_ellipse = None
     ema = None
@@ -350,7 +353,7 @@ def main():
         
         percents = calculate_ellipse_scores(thresholded_images, ellipses)
         
-        best_ellipse, x, y = select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx)
+        best_ellipse, x, y = select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug=debug)
         
         if best_ellipse is None:
             continue
@@ -364,9 +367,9 @@ def main():
         
         display_results(frame, thresholded_images, contour_images, ellipse_images,
                        full_ellipse, cx, cy, x, y, frame_idx)
-
         frame_idx += 1
-        prev_array.append(best_ellipse)
+        # should be best? or full idk 
+        prev_array.append(full_ellipse)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     
