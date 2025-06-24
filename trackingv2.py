@@ -9,12 +9,14 @@ import matplotlib.pyplot as plt
 mask = np.zeros((128, 128), dtype=np.uint8)
 
 def coarse_find(frame):
+    """Uses Haar filters to crop pic in to the eye"""
     eye_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + 'haarcascade_eye.xml'
     )
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     eyes = eye_cascade.detectMultiScale(
         gray,
+        # these params seem to give a good tradeoff between speed and accuracy
         scaleFactor=1.05,
         minNeighbors=3,
         minSize=(150, 150)
@@ -22,11 +24,13 @@ def coarse_find(frame):
     return eyes
 
 def remove_bright_spots(image, threshold=200, replace=0):
+    """replaces any pixels above threshold val """
     mask = image < threshold
     image[~mask] = replace
     return image
 
 def find_dark_area(image):
+    """grid search darkest area of pixels to find threshold val"""
     num_grids = 9
     h, w = image.shape[:2]
     grid_h = h // num_grids
@@ -43,6 +47,7 @@ def find_dark_area(image):
     return darkest_square, darkest_val
     
 def threshold_images(image, dark_point, thresholds=[0, 5, 10, 15, 20, 25, 30, 35, 40, 50]):
+    """Makes image array of thresholded images based on dark point and adjustment array"""
     images = []
     h, w = image.shape
     denoised = cv2.GaussianBlur(image, (5, 5), 0)   
@@ -59,6 +64,7 @@ def threshold_images(image, dark_point, thresholds=[0, 5, 10, 15, 20, 25, 30, 35
 
         mask = np.zeros((h + 2, w + 2), np.uint8)
 
+        #fill holes
         flood = opened.copy()
         cv2.floodFill(flood, mask, (0, 0), 255)
 
@@ -70,6 +76,7 @@ def threshold_images(image, dark_point, thresholds=[0, 5, 10, 15, 20, 25, 30, 35
     return images
 
 def get_contours(images, min_area=1500, margin=3):
+    """gets contours for thresholded images"""
     filtered_contours = []
     contour_images    = []
 
@@ -83,6 +90,7 @@ def get_contours(images, min_area=1500, margin=3):
             if cv2.contourArea(cnt) < min_area:
                 continue
             pts = cnt.reshape(-1, 2)
+            # if within margin pixels of edge of image remove
             if (pts[:,0] < margin).any() or (pts[:,0] > w - margin).any() \
             or (pts[:,1] < margin).any() or (pts[:,1] > h - margin).any():
                 continue
@@ -93,6 +101,8 @@ def get_contours(images, min_area=1500, margin=3):
             all_pts = all_pts.reshape(-1,1,2).astype(np.int32)
         else:
             all_pts = np.array([], dtype=np.int32).reshape(-1,1,2)
+
+        # convex hull because we know pupil shouldn't be concave 
         hull = cv2.convexHull(all_pts)
 
         ci = np.zeros_like(img)
@@ -103,6 +113,7 @@ def get_contours(images, min_area=1500, margin=3):
     return filtered_contours, contour_images
 
 def fit_ellipse(contour, bias_factor=-1):
+    "Fits ellipse to cloud point. Bias factor forges points below y mean to bias to bottom"
     pts = np.vstack([c.reshape(-1,2) for c in contour])
     
     mean_y     = np.mean(pts[:,1])
@@ -122,6 +133,7 @@ def fit_ellipse(contour, bias_factor=-1):
     return cv2.fitEllipse(weighted_pts)
 
 def check_flip(ellipse):
+    "Normalizes angles because openCV fits weirdly. Mainly for training"
     (cx, cy), (w, h), ang = ellipse
 
     if w < h:
@@ -135,12 +147,14 @@ def check_flip(ellipse):
     return (cx, cy), (w, h), ang
 
 def prepare_frame(frame, top_half=False):
+    "Splits frame in half"
     if top_half:
         return frame[:frame.shape[0] // 2, :]
     else:
         return frame[frame.shape[0] // 2:, :]
 
 def process_eye_crop(frame, eyes):
+    "Function that crops the eye region"
     x, y, w, h = eyes[0]
     size = max(w, h)
     eye_crop = frame[y:y+size, x:x+size].copy()
@@ -149,6 +163,7 @@ def process_eye_crop(frame, eyes):
     return eye_gray, x, y, size
 
 def generate_ellipse_candidates(eye_gray, dark_val, thresholds):
+    "Function that makes the possible ellipses"
     thresholded_images = threshold_images(eye_gray, dark_val, thresholds=thresholds)
     contours, contour_images = get_contours(thresholded_images)
     ellipse_images = []
@@ -170,6 +185,7 @@ def generate_ellipse_candidates(eye_gray, dark_val, thresholds):
     return thresholded_images, contour_images, ellipse_images, ellipses
 
 def calculate_ellipse_scores(thresholded_images, ellipses):
+    "Scores each ellipse by filtering axis ratios, size, and the ratio of white/black pixels on inside of elipse and vice versa for outside"
     N = len(thresholded_images) 
     percents = []
     
@@ -202,6 +218,7 @@ def calculate_ellipse_scores(thresholded_images, ellipses):
         outside_black = cv2.countNonZero(cv2.bitwise_and(cv2.bitwise_not(eye_thresh), outside_mask))
         outside_ratio = outside_black / outside_total if outside_total>0 else 0
 
+        # some heuristic stuff here seems to work pretty well here 
         percent = ((inside_ratio + outside_ratio*.25) / 1.5)
         roundness = 1.0 - abs(w - h) / max(w, h)
         percents.append(percent + roundness*0)
@@ -209,6 +226,7 @@ def calculate_ellipse_scores(thresholded_images, ellipses):
     return percents
 
 def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx):
+    "More elipse filtering and uses the previous ellipse if we violate conditions"
     best_idx = int(np.argmax(percents))
     best_ellipse = ellipses[best_idx]
 
@@ -224,10 +242,13 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx):
     if prev_ellipse is not None:
         (pcx, pcy), (pw, ph), pang = prev_ellipse[0]
         (cx, cy), (w, h), ang = best_ellipse
+        # Center moves too much
         if abs(cy - pcy) > 100 or abs(cx - pcx) > 100:
             print(f"Teleporting detected, using previous ellipse{frame_idx}")
             best_ellipse = prev_ellipse[0]
             x, y = prev_ellipse[1], prev_ellipse[2]
+
+        # Too small
         elif (w * h) < 0.3 * (pw * ph):
             print(f"Current ellipse too small, using previous ellipse{frame_idx}")
             best_ellipse = prev_ellipse[0]
@@ -236,6 +257,7 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx):
     return best_ellipse, x, y
 
 def apply_smoothing(best_ellipse, x, y, ema, center_alpha, size_alpha, rotation_alpha):
+    "EMA for smoothing"
     best_ellipse = check_flip(best_ellipse)
     (cx, cy), (w, h), ang = best_ellipse
 
@@ -266,6 +288,7 @@ def apply_smoothing(best_ellipse, x, y, ema, center_alpha, size_alpha, rotation_
 
 def display_results(frame, thresholded_images, contour_images, ellipse_images, 
                    full_ellipse, cx, cy, x, y, frame_idx):
+    "Shows frames"
     N = len(thresholded_images)
     H, W = thresholded_images[0].shape
     grid = np.zeros((3 * H, N * W), dtype=np.uint8)
@@ -284,16 +307,19 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
     cv2.imshow("Eye Tracking", frame)
 
 def main():
-    video_path = "videos/2.mp4"
-    TOP = True
+    video_path = "videos/igor1.mp4"
+    TOP = False
+    # for alphas closer to 1 means bias more to current frame
     #.9 is good
-    center_alpha = 1
+    center_alpha = .9
     #.25 is good
-    size_alpha = 1
+    size_alpha = .25
+    # use 1
     rotation_alpha = 1
     prev_array = []
     prev_ellipse = None
     ema = None
+    # is this too many? Runs 30+ fps no problem
     thresholds = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48]
     
     cap = cv2.VideoCapture(video_path)
