@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
         with open("output/eye_data.csv", "a") as f:
             f.write(f"{frame_idx},{x},{y},{w},{h},"
-                    f"{final_ellipse[0][0]},{final_ellipse[0][1]},"
+                    f"{final_ellipse[0][0]-x},{final_ellipse[0][1]-y},"
                         f"{final_ellipse[1][0]},{final_ellipse[1][1]},{final_ellipse[2]}\n")
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break

@@ -7,12 +7,12 @@ import numpy as np
 import tensorflow as tf
 import pandas as pd
 from tensorflow.keras.models import load_model
-from run_tracking import coarse_find
+from trackingv2 import coarse_find
 
 model = load_model("eye_tracking_model.keras")
 
 # smoothing factor (0 < α ≤ 1). smaller α → slower updates
-alpha = 0.4
+alpha = 1
 ema = None  # will hold smoothed [x, y, w, h, angle_norm]
 
 cap = cv2.VideoCapture("videos/2.mp4")
