@@ -49,26 +49,18 @@ def find_dark_area(image):
 def threshold_images(image, dark_point, thresholds=[0, 5, 10, 15, 20, 25, 30, 35, 40, 50]):
     images = []
     h, w = image.shape
-
-    # 1) Pre-smooth the grayscale to reduce sensor noise
     denoised = cv2.GaussianBlur(image, (5, 5), 0)   
-
-    # small kernel for morphology
     kernel = np.ones((3, 3), np.uint8)
 
     for t in thresholds:
-        # 2) Inverse binary threshold (dark ⇒ white)
         _, binary = cv2.threshold(
             denoised,
             dark_point + t,
             255,
             cv2.THRESH_BINARY_INV
         )
-
-        # 3) Morphological opening to remove speckles
         opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
 
-        # 4) Prepare mask for floodFill (2 px border)
         mask = np.zeros((h + 2, w + 2), np.uint8)
 
         flood = opened.copy()
@@ -143,18 +135,37 @@ def fit_ellipse(contour, bias_factor=-1):
         return None
     return cv2.fitEllipse(weighted_pts)
 
+
+def check_flip(ellipse):
+    (cx, cy), (w, h), ang = ellipse
+
+    if w < h:
+        w, h = h, w
+        ang += 90
+    if ang >= 90:
+        ang -= 180
+    elif ang < -90:
+        ang += 180
+
+    return (cx, cy), (w, h), ang
+
 if __name__ == "__main__":
+    # for training set alpha to 0
+    video_path = "videos/igor1.mp4"
+    center_alpha = .9
+    size_alpha = .25
+    rotation_alpha = 1
     prev_array = []
     prev_ellipse = None
-    video_path = "videos/2.mp4"
+    ema = None
+
     # thresholds=[0, 5, 10, 15, 20, 25, 30, 35, 40, 50]
     # brute force this for now 
     thresholds = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48]
-    TOP = True
+    TOP = False
     cap = cv2.VideoCapture(video_path)
     frame_idx = 0
     prev_eyes = None
-    start = time.time()
     start_time = time.time()
     while True:
         ret, frame = cap.read()
@@ -166,7 +177,7 @@ if __name__ == "__main__":
             frame = frame[frame.shape[0] // 2:, :]
         eyes = coarse_find(frame)
         # if can't find eyes use previous location 
-        # TODO: can just use prev elipse so don't have to recalculate
+
         if len(eyes) > 0:
             prev_eyes = eyes.copy()
         elif prev_eyes is not None:
@@ -178,12 +189,7 @@ if __name__ == "__main__":
         eye_crop = frame[y:y+size, x:x+size].copy()
         eye_crop = remove_bright_spots(eye_crop, threshold=220, replace=100)
         eye_gray = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
-
         dark_square, dark_val = find_dark_area(eye_gray)
-        
-        # plot dark square
-        
-# Threshold the image using multiple thresholds
         thresholded_images = threshold_images(eye_gray, dark_val, thresholds=thresholds)
         contours, contour_images = get_contours(thresholded_images)
         ellipse_images = []
@@ -202,9 +208,6 @@ if __name__ == "__main__":
             ellipses.append(box)
 
             ellipse_images.append(temp_img)
-
-
-
 
         N = len(thresholded_images) 
         percents = []
@@ -268,22 +271,40 @@ if __name__ == "__main__":
                 print(f"Current ellipse too small, using previous ellipse{frame_idx}")
                 best_ellipse = prev_ellipse[0]
                 x, y = prev_ellipse[1], prev_ellipse[2]
-
-
-
-
         # if current
         prev_ellipse = (best_ellipse, x, y)
-
         # shift ellipse back into full‐frame coords
+        best_ellipse = check_flip(best_ellipse)
         (cx, cy), (w, h), ang = best_ellipse
+
+        # full_ellipse = project_ellipse(full_ellipse)
+        # past 3 elipses array
+    
+        alphas = np.array([
+            center_alpha,   # cx
+            center_alpha,   # cy
+            size_alpha,     # w
+            size_alpha,     # h
+            rotation_alpha  # ang
+        ], dtype=np.float32)
+
+        # …inside your loop, once you have (cx,cy),(w,h),ang and the crop offset (x,y):
+        current = np.array([cx + x, cy + y, w, h, ang], dtype=np.float32)
+
+        if ema is None:
+            ema = current.copy()
+        else:
+            # elementwise EMA with three different alphas
+            ema = alphas * current + (1.0 - alphas) * ema
+
+        # unpack smoothed values
+        sm_cx, sm_cy, sm_w, sm_h, sm_ang = ema
+
         full_ellipse = (
-            (cx + x, cy + y),
-            (w, h),
-            ang
+            (float(sm_cx), float(sm_cy)),
+            (float(sm_w),  float(sm_h)),
+            float(sm_ang)
         )
-
-
         H, W = thresholded_images[0].shape
         # 3 rows this time
         grid = np.zeros((3 * H, N * W), dtype=np.uint8)
@@ -294,9 +315,9 @@ if __name__ == "__main__":
                     # resize for display if you like
         grid_disp = cv2.resize(grid, (1024, 512))  # just keep aspect
         cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
-        # cv2.ellipse(frame, full_ellipse, (0, 255, 0), 1)
+        cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
         # plot center point
-        cv2.circle(frame, (int(cx + x), int(cy + y)), 3, (0, 0, 255), -1)
+        cv2.circle(frame, (int(cx+x), int(cy+y)), 3, (0, 0, 255), -1)
         cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         # cv2.rectangle(frame, (x, y), (x + size, y + size), (255, 0, 0), 2)
