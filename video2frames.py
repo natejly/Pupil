@@ -2,52 +2,73 @@ import os
 import glob
 import cv2
 
-VIDEO_FOLDER  = "videos"
+VIDEO_FOLDER  = "Lefts"
 OUTPUT_FOLDER = "frames"
+SPLIT_FOLDER  = "splitvids"
 
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(SPLIT_FOLDER, exist_ok=True)
 
 video_paths = sorted(glob.glob(os.path.join(VIDEO_FOLDER, "*.mp4")))
 if not video_paths:
     raise RuntimeError(f"No .mp4 files found in {VIDEO_FOLDER!r}")
 
 global_idx = 0
-h = 0
-w = 0
-h2 = 0
+
 for vp in video_paths:
     cap = cv2.VideoCapture(vp)
     if not cap.isOpened():
         print(f"⚠️ Skipping unreadable file: {vp}")
         continue
 
-    print(f"Processing {vp} …")
+    basename = os.path.splitext(os.path.basename(vp))[0]
+    print(f"Processing {basename} …")
+
+    top_frames = []
+    bottom_frames = []
+
+    first = True
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        if global_idx == 0:
+
+        if first:
             h, w = frame.shape[:2]
             h2 = h // 2
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 
-        top   = frame[0:h2,    :]
+            # Create video writers for split videos
+            top_writer = cv2.VideoWriter(
+                os.path.join(SPLIT_FOLDER, f"{basename}_top.mp4"), fourcc, fps, (w, h2)
+            )
+            bottom_writer = cv2.VideoWriter(
+                os.path.join(SPLIT_FOLDER, f"{basename}_bottom.mp4"), fourcc, fps, (w, h2)
+            )
+            first = False
 
-        filename = f"{global_idx}.png"
-        path     = os.path.join(OUTPUT_FOLDER, filename)
-        cv2.imwrite(path, top)
-        global_idx += 1
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+        top = frame[0:h2, :]
+        bottom = frame[h2:h, :]
 
-        bottom = frame[h2:h,    :]
+        top_frames.append(top)
+        bottom_frames.append(bottom)
 
-        filename = f"{global_idx}.png"
-        path     = os.path.join(OUTPUT_FOLDER, filename)
-        cv2.imwrite(path, top)
-        global_idx += 1
+        top_writer.write(top)
+        bottom_writer.write(bottom)
 
+    top_writer.release()
+    bottom_writer.release()
     cap.release()
 
-print(f"✅ Saved {global_idx} frames into '{OUTPUT_FOLDER}/'")
+    # Save top frames first
+    for frame in top_frames:
+        cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"{global_idx}.png"), frame)
+        global_idx += 1
+
+    # Then save bottom frames
+    for frame in bottom_frames:
+        cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"{global_idx}.png"), frame)
+        global_idx += 1
+
+print(f"✅ Saved {global_idx} frames in '{OUTPUT_FOLDER}/' and split videos in '{SPLIT_FOLDER}/'")
