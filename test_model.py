@@ -22,7 +22,7 @@ output_details_y = interpreter_y.get_output_details()
 print("TFLite models loaded.")
 
 # Video capture
-cap = cv2.VideoCapture("videos/2L.mp4")
+cap = cv2.VideoCapture("videos/alex.mp4")
 if not cap.isOpened():
     raise IOError("Cannot open video")
 
@@ -34,7 +34,6 @@ frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter('output_video.mp4', fourcc, fps, (frame_width, frame_height))
 
-# Variables
 alpha = 1
 ema = None
 prev_eyes = None
@@ -76,6 +75,7 @@ while True:
     interpreter_y.invoke()
     py = interpreter_y.get_tensor(output_details_y[0]['index'])[0][0] * size
 
+    # TODO: work on smoothing idk why it makes it worse rn
     current = np.array([px, py], dtype=np.float32)
     if ema is None:
         ema = current

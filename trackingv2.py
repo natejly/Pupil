@@ -27,6 +27,9 @@ def remove_bright_spots(image, threshold=200, replace=0):
     image[~mask] = replace
     return image
 
+# TODO: implement this function
+def remove_thresholded_shadows():
+    pass
 def find_dark_area(image):
     """grid search darkest area of pixels to find threshold val"""
     num_grids = 9
