@@ -5,7 +5,6 @@ import os
 import sys
 import math
 from math import pi
-import matplotlib.pyplot as plt
 mask = np.zeros((128, 128), dtype=np.uint8)
 def coarse_find(frame):
     """Uses Haar filters to crop pic in to the eye"""
