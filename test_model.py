@@ -6,14 +6,20 @@ import cv2
 import time
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import load_model
 from trackingv2 import coarse_find, process_eye_crop
 
-# Load models
-start = time.time()
-model = load_model("eye_tracking_model.keras")
-modelv = load_model("eye_tracking_modelv.keras")
-print("models loaded in {:.2f} seconds".format(time.time() - start))
+# Load TFLite interpreters
+interpreter_x = tf.lite.Interpreter(model_path="eye_tracking_model.tflite")
+interpreter_x.allocate_tensors()
+input_details_x = interpreter_x.get_input_details()
+output_details_x = interpreter_x.get_output_details()
+
+interpreter_y = tf.lite.Interpreter(model_path="eye_tracking_modelv.tflite")
+interpreter_y.allocate_tensors()
+input_details_y = interpreter_y.get_input_details()
+output_details_y = interpreter_y.get_output_details()
+
+print("TFLite models loaded.")
 
 # Video capture
 cap = cv2.VideoCapture("Lefts/igor1.mp4")
@@ -21,10 +27,10 @@ if not cap.isOpened():
     raise IOError("Cannot open video")
 
 # Configuration
-top_half = True  # change to False to track bottom half
+top_half = False  # change to True to track top half
 fps = cap.get(cv2.CAP_PROP_FPS)
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) // 2 if top_half else int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter('output_video.mp4', fourcc, fps, (frame_width, frame_height))
 
@@ -55,12 +61,20 @@ while True:
     else:
         continue
 
+    # Preprocess eye image
     eye_gray, x, y, size = process_eye_crop(frame, eyes)
     image = cv2.resize(eye_gray, (128, 128)) / 255.0
     image = np.reshape(image, (1, 128, 128, 1)).astype(np.float32)
 
-    px = model.predict(image, verbose=0)[0] * size
-    py = modelv.predict(image, verbose=0)[0] * size
+    # Inference using TFLite (x coordinate)
+    interpreter_x.set_tensor(input_details_x[0]['index'], image)
+    interpreter_x.invoke()
+    px = interpreter_x.get_tensor(output_details_x[0]['index'])[0][0] * size
+
+    # Inference using TFLite (y coordinate)
+    interpreter_y.set_tensor(input_details_y[0]['index'], image)
+    interpreter_y.invoke()
+    py = interpreter_y.get_tensor(output_details_y[0]['index'])[0][0] * size
 
     current = np.array([px, py], dtype=np.float32)
     if ema is None:
