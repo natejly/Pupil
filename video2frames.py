@@ -2,7 +2,7 @@ import os
 import glob
 import cv2
 
-VIDEO_FOLDER  = "Lefts"
+VIDEO_FOLDER  = "videos"
 OUTPUT_FOLDER = "frames"
 SPLIT_FOLDER  = "splitvids"
 
