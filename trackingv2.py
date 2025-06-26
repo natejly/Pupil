@@ -345,14 +345,15 @@ def main():
             break
         
         frame = prepare_frame(frame, TOP)
-        eyes = coarse_find(frame)
+        if frame_idx % 5 == 0:
+            eyes = coarse_find(frame)
 
-        if len(eyes) > 0:
-            prev_eyes = eyes.copy()
-        elif prev_eyes is not None:
-            eyes = prev_eyes
-        else:
-            continue
+            if len(eyes) > 0:
+                prev_eyes = eyes.copy()
+            elif prev_eyes is not None:
+                eyes = prev_eyes
+            else:
+                continue
 
         eye_gray, x, y, size = process_eye_crop(frame, eyes)
         dark_square, dark_val = find_dark_area(eye_gray)
