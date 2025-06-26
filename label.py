@@ -14,10 +14,11 @@ if __name__ == "__main__":
     # get first arg
 
     frames_folder = "frames"
-    center_alpha = 1
-    width_alpha = 1
-    height_alpha = 1
+    x_alpha = .75
+    y_alpha = .75
     rotation_alpha = 1
+    width_alpha = .5
+    height_alpha = .1
     prev_array = []
     prev_ellipse = None
     ema = None
@@ -51,6 +52,10 @@ if __name__ == "__main__":
         if i % 100 == 0:
             print(f"Processing frame {i}/{num_frames}...")
         frame_path = os.path.join(frames_folder, f"{i}.png")
+        if os.path.getsize(frame_path) < 20 * 1024:  # 20 KB
+            print(f"New video detected at frame {i}, resetting EMA.")
+            ema = None
+            continue
         frame = cv2.imread(frame_path)
         eyes = coarse_find(frame)
 
@@ -76,11 +81,11 @@ if __name__ == "__main__":
             
         prev_ellipse = (best_ellipse, x, y)
         
-        final_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema,center_alpha=center_alpha,
+        final_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema,x_alpha=x_alpha,
+                                            y_alpha=y_alpha,
                                             width_alpha=width_alpha,
                                             height_alpha=height_alpha,  
                                             rotation_alpha=rotation_alpha) 
-        
         (cx, cy), (w, h), ang = final_ellipse
         cv2.ellipse(eye_gray, (int(cx-x), int(cy-y)), (int(w/2), int(h/2)), ang, 0, 360, (0, 255, 0), 2)
 

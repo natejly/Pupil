@@ -55,10 +55,14 @@ for vp in video_paths:
     for frame in top_frames:
         cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"{global_idx}.png"), frame)
         global_idx += 1
+    # save blank png so we can reset ema for new vid
+    cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"{global_idx}.png"), frame * 0)
+    global_idx += 1
 
     # Then save bottom frames
     for frame in bottom_frames:
         cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"{global_idx}.png"), frame)
         global_idx += 1
-
+    cv2.imwrite(os.path.join(OUTPUT_FOLDER, f"{global_idx}.png"), frame * 0)
+    global_idx += 1
 print(f"✅ Saved {global_idx} frames in '{OUTPUT_FOLDER}/' and split videos in '{SPLIT_FOLDER}/'")

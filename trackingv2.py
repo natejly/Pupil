@@ -71,7 +71,9 @@ def threshold_images(image, dark_point, thresholds=[0, 5, 10, 15, 20, 25, 30, 35
 
         flood_inv = cv2.bitwise_not(flood)
         filled = cv2.bitwise_or(opened, flood_inv)
-
+        # remove small noise
+        # gaussian blur to smooth edges
+        filled = cv2.GaussianBlur(filled, (5, 5), 2)
         images.append(filled)
 
     return images
@@ -113,7 +115,7 @@ def get_contours(images, min_area=1500, margin=3):
 
     return filtered_contours, contour_images
 
-def fit_ellipse(contour, bias_factor=-1):
+def fit_ellipse(contour, bias_factor=3):
     "Fits ellipse to cloud point. Bias factor forges points below y mean to bias to bottom"
     pts = np.vstack([c.reshape(-1,2) for c in contour])
     
@@ -131,21 +133,31 @@ def fit_ellipse(contour, bias_factor=-1):
     weighted_pts = weighted_pts.reshape(-1,1,2).astype(np.int32)
     if len(weighted_pts) < 5:
         return None
+    temp = cv2.fitEllipse(weighted_pts)
+    if temp is None:
+        return None
+    (cx, cy), (w, h), ang = temp
+    if w < h:
+        reflected_pts = weighted_pts.copy()
+        reflected_pts[:, 0, 1] = 2 * cy - reflected_pts[:, 0, 1]
+        weighted_pts = np.concatenate([weighted_pts, reflected_pts], axis=0)
+
     return cv2.fitEllipse(weighted_pts)
 
 def check_flip(ellipse):
-    "Normalizes angles because openCV fits weirdly. Mainly for training"
+    "Normalizes angles and axes so width is always major axis"
     (cx, cy), (w, h), ang = ellipse
 
     # if w < h:
     #     w, h = h, w
     #     ang += 90
-    # if ang >= 90:
-    #     ang -= 180
-    # elif ang < -90:
-    #     ang += 180
+
+    # Normalize angle to (-90, 90]
     if ang > 90:
         ang -= 180
+    elif ang <= -90:
+        ang += 180
+
     return (cx, cy), (w, h), ang
 
 def prepare_frame(frame, top_half=False):
@@ -261,28 +273,18 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug
     
     return best_ellipse, x, y
 
-def apply_smoothing(best_ellipse, x, y, ema, center_alpha, width_alpha, height_alpha, rotation_alpha):
-    "EMA for smoothing"
+def apply_smoothing(best_ellipse, x, y, ema, 
+                    x_alpha, y_alpha, width_alpha, height_alpha, rotation_alpha):
+
     best_ellipse = check_flip(best_ellipse)
     (cx, cy), (w, h), ang = best_ellipse
 
-    # Set alpha for each component
-    alphas = np.array([
-        center_alpha,   # cx
-        center_alpha,   # cy
-        width_alpha,     # w
-        height_alpha,   # h
-        rotation_alpha  # angle
-    ], dtype=np.float32)
-
-    # Current ellipse values with x and y offsets applied to center
     current = np.array([cx + x, cy + y, w, h, ang], dtype=np.float32)
-
-    # Apply exponential moving average
     if ema is None:
-        ema = current.copy()
-    else:
-        ema = alphas * current + (1.0 - alphas) * ema
+        return best_ellipse, current.copy()
+    alphas = np.array([x_alpha, y_alpha, width_alpha, height_alpha, rotation_alpha], dtype=np.float32)
+
+    ema = alphas * current + (1.0 - alphas) * ema
 
     sm_cx, sm_cy, sm_w, sm_h, sm_ang = ema
     full_ellipse = (
@@ -292,8 +294,6 @@ def apply_smoothing(best_ellipse, x, y, ema, center_alpha, width_alpha, height_a
     )
 
     return full_ellipse, ema
-
-    
 
 def display_results(frame, thresholded_images, contour_images, ellipse_images, 
                    full_ellipse, cx, cy, x, y, frame_idx):
@@ -309,25 +309,22 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
     
     grid_disp = cv2.resize(grid, (1024, 512))
     cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
-    cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
+    # cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
     cv2.circle(frame, (int(cx+x), int(cy+y)), 3, (0, 0, 255), -1)
     cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.imshow("Eye Tracking", frame)
 
 def main():
-    video_path = "videos/igor2.mp4"
-    TOP = False
+    video_path = "videos/igor2L.mp4"
+    TOP = True
     debug = False
-    # for alphas closer to 1 means bias more to current frame
-    #.9 is good
-    # can have heuristic where tthinner elipse lower the center alpha 
-    center_alpha = .75
-    #.25 is good
-    # use 1
-    rotation_alpha = .99
-    width_alpha = .25
-    height_alpha = .25
+    x_alpha = .75
+    y_alpha = .75
+
+    rotation_alpha = 1
+    width_alpha = .5
+    height_alpha = .1
     prev_array = []
     prev_ellipse = None
     ema = None
@@ -369,8 +366,9 @@ def main():
             continue
             
         prev_ellipse = (best_ellipse, x, y)
-        
-        full_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema,center_alpha=center_alpha,
+
+        full_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema,x_alpha=x_alpha,
+                                            y_alpha=y_alpha,
                                             width_alpha=width_alpha,
                                             height_alpha=height_alpha,  
                                             rotation_alpha=rotation_alpha) 
