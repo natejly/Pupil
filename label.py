@@ -15,7 +15,8 @@ if __name__ == "__main__":
 
     frames_folder = "frames"
     center_alpha = 1
-    size_alpha = 1
+    width_alpha = 1
+    height_alpha = 1
     rotation_alpha = 1
     prev_array = []
     prev_ellipse = None
@@ -75,8 +76,10 @@ if __name__ == "__main__":
             
         prev_ellipse = (best_ellipse, x, y)
         
-        final_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema, 
-                                          center_alpha, size_alpha, rotation_alpha)
+        final_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema,center_alpha=center_alpha,
+                                            width_alpha=width_alpha,
+                                            height_alpha=height_alpha,  
+                                            rotation_alpha=rotation_alpha) 
         
         (cx, cy), (w, h), ang = final_ellipse
         cv2.ellipse(eye_gray, (int(cx-x), int(cy-y)), (int(w/2), int(h/2)), ang, 0, 360, (0, 255, 0), 2)

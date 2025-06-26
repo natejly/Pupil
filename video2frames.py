@@ -40,12 +40,7 @@ for vp in video_paths:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 
             # Create video writers for split videos
-            top_writer = cv2.VideoWriter(
-                os.path.join(SPLIT_FOLDER, f"{basename}_top.mp4"), fourcc, fps, (w, h2)
-            )
-            bottom_writer = cv2.VideoWriter(
-                os.path.join(SPLIT_FOLDER, f"{basename}_bottom.mp4"), fourcc, fps, (w, h2)
-            )
+
             first = False
 
         top = frame[0:h2, :]
@@ -54,11 +49,6 @@ for vp in video_paths:
         top_frames.append(top)
         bottom_frames.append(bottom)
 
-        top_writer.write(top)
-        bottom_writer.write(bottom)
-
-    top_writer.release()
-    bottom_writer.release()
     cap.release()
 
     # Save top frames first

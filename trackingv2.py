@@ -258,20 +258,24 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug
     
     return best_ellipse, x, y
 
-def apply_smoothing(best_ellipse, x, y, ema, center_alpha, size_alpha, rotation_alpha):
+def apply_smoothing(best_ellipse, x, y, ema, center_alpha, width_alpha, height_alpha, rotation_alpha):
     "EMA for smoothing"
     best_ellipse = check_flip(best_ellipse)
     (cx, cy), (w, h), ang = best_ellipse
+
+    # Set alpha for each component
     alphas = np.array([
-        center_alpha,
-        center_alpha,
-        size_alpha,
-        size_alpha,
-        rotation_alpha
+        center_alpha,   # cx
+        center_alpha,   # cy
+        width_alpha,     # w
+        height_alpha,   # h
+        rotation_alpha  # angle
     ], dtype=np.float32)
 
+    # Current ellipse values with x and y offsets applied to center
     current = np.array([cx + x, cy + y, w, h, ang], dtype=np.float32)
 
+    # Apply exponential moving average
     if ema is None:
         ema = current.copy()
     else:
@@ -280,11 +284,13 @@ def apply_smoothing(best_ellipse, x, y, ema, center_alpha, size_alpha, rotation_
     sm_cx, sm_cy, sm_w, sm_h, sm_ang = ema
     full_ellipse = (
         (float(sm_cx), float(sm_cy)),
-        (float(sm_w),  float(sm_h)),
+        (float(sm_w), float(sm_h)),
         float(sm_ang)
     )
-    
+
     return full_ellipse, ema
+
+    
 
 def display_results(frame, thresholded_images, contour_images, ellipse_images, 
                    full_ellipse, cx, cy, x, y, frame_idx):
@@ -307,17 +313,18 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
     cv2.imshow("Eye Tracking", frame)
 
 def main():
-    video_path = "videos/2.mp4"
-    TOP = True
+    video_path = "videos/igor2.mp4"
+    TOP = False
     debug = False
     # for alphas closer to 1 means bias more to current frame
     #.9 is good
     # can have heuristic where tthinner elipse lower the center alpha 
     center_alpha = .75
     #.25 is good
-    size_alpha = .25
     # use 1
     rotation_alpha = .99
+    width_alpha = .25
+    height_alpha = .25
     prev_array = []
     prev_ellipse = None
     ema = None
@@ -359,8 +366,10 @@ def main():
             
         prev_ellipse = (best_ellipse, x, y)
         
-        full_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema, 
-                                          center_alpha, size_alpha, rotation_alpha)
+        full_ellipse, ema = apply_smoothing(best_ellipse, x, y, ema,center_alpha=center_alpha,
+                                            width_alpha=width_alpha,
+                                            height_alpha=height_alpha,  
+                                            rotation_alpha=rotation_alpha) 
         
         (cx, cy), (w, h), ang = best_ellipse
         
