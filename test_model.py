@@ -9,12 +9,12 @@ import tensorflow as tf
 from trackingv2 import coarse_find, process_eye_crop
 
 # Load TFLite interpreters
-interpreter_x = tf.lite.Interpreter(model_path="eye_tracking_model.tflite")
+interpreter_x = tf.lite.Interpreter(model_path="models/v1_small_lefts/eye_tracking_model.tflite")
 interpreter_x.allocate_tensors()
 input_details_x = interpreter_x.get_input_details()
 output_details_x = interpreter_x.get_output_details()
 
-interpreter_y = tf.lite.Interpreter(model_path="eye_tracking_modelv.tflite")
+interpreter_y = tf.lite.Interpreter(model_path="models/v1_small_lefts/eye_tracking_model.tflite")
 interpreter_y.allocate_tensors()
 input_details_y = interpreter_y.get_input_details()
 output_details_y = interpreter_y.get_output_details()
