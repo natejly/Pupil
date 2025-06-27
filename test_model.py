@@ -22,7 +22,7 @@ output_details_y = interpreter_y.get_output_details()
 print("TFLite models loaded.")
 
 # Video capture
-cap = cv2.VideoCapture("videos/2L.mp4")
+cap = cv2.VideoCapture("videos/igor1.mp4")
 if not cap.isOpened():
     raise IOError("Cannot open video")
 
@@ -34,7 +34,9 @@ frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter('output_video.mp4', fourcc, fps, (frame_width, frame_height))
 
-alpha = 1
+x_alpha = .75
+y_alpha = .75
+
 ema = None
 prev_eyes = None
 frame_idx = 0
@@ -76,26 +78,26 @@ while True:
     py = interpreter_y.get_tensor(output_details_y[0]['index'])[0][0] * size
 
     # TODO: work on smoothing idk why it makes it worse rn
-    current = np.array([px, py], dtype=np.float32)
+    current = np.array([px+x, py+y], dtype=np.float32)
+    alphas = np.array([x_alpha, y_alpha], dtype=np.float32)
     if ema is None:
         ema = current
     else:
-        ema = alpha * current + (1 - alpha) * ema
+        ema = alphas * current + (1 - alphas) * ema
 
     ex, ey = ema
 
     # Draw tracking point and frame number
-    cv2.circle(frame, (int(ex + x), int(ey + y)), 3, (200, 200, 100), -1)
+    cv2.circle(frame, (int(ex), int(ey)), 3, (200, 200, 100), -1)
     cv2.putText(frame, f"Frame: {frame_idx}", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
     # Show and save frame
-    cv2.imshow("Smoothed Ellipse", frame)
+    cv2.imshow("CNN", frame)
     out.write(frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
-
     frame_idx += 1
 
 # Cleanup

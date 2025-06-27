@@ -303,7 +303,7 @@ def check_blink(frame,
                 full_ellipse,
                 offset_x=0.0,
                 offset_y=0.0,
-                brightness_thresh=100.0):
+                brightness_thresh=120.0):
 
     (cx, cy), (w, h), ang = full_ellipse
 
@@ -336,11 +336,12 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
     cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
     cv2.circle(frame, (int(cx), int(cy)), 3, (0, 0, 255), -1)
     cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, 
+                (255, 255, 255), 2)
     cv2.imshow("Eye Tracking", frame)
 
 def main():
-    video_path = "videos/4.mp4"
+    video_path = "videos/igor1.mp4"
     TOP = True
     debug = True
     x_alpha = .75
