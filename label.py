@@ -90,6 +90,9 @@ if __name__ == "__main__":
                                             height_alpha=height_alpha,  
                                             rotation_alpha=rotation_alpha) 
         (cx, cy), (w, h), ang = final_ellipse
+
+        if check_blink(frame, final_ellipse):
+            continue
         cv2.ellipse(eye_gray, (int(cx-x), int(cy-y)), (int(w/2), int(h/2)), ang, 0, 360, (0, 255, 0), 2)
         
         cv2.imshow("eye_crop", eye_gray)
