@@ -148,16 +148,15 @@ def check_flip(ellipse):
     "Normalizes angles and axes so width is always major axis"
     (cx, cy), (w, h), ang = ellipse
 
-    # if w < h:
-    #     w, h = h, w
-    #     ang += 90
 
-    # Normalize angle to (-90, 90]
     if ang > 90:
         ang -= 180
     elif ang <= -90:
         ang += 180
 
+    if ang == 90:
+        ang = 0
+        w, h = h, w
     return (cx, cy), (w, h), ang
 
 def prepare_frame(frame, top_half=False):
@@ -303,7 +302,7 @@ def check_blink(frame,
                 full_ellipse,
                 offset_x=0.0,
                 offset_y=0.0,
-                brightness_thresh=120.0):
+                brightness_thresh=110.0):
 
     (cx, cy), (w, h), ang = full_ellipse
 
@@ -332,7 +331,7 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
         grid[2*H :3*H, i*W:(i+1)*W] = ellipse_images[i]
     
     grid_disp = cv2.resize(grid, (1024, 512))
-    cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
+    # cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
     cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
     cv2.circle(frame, (int(cx), int(cy)), 3, (0, 0, 255), -1)
     cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
