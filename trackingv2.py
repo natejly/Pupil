@@ -239,7 +239,7 @@ def calculate_ellipse_scores(thresholded_images, ellipses):
     
     return percents
 
-def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug=False):
+def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug=False, save=True):
     "More elipse filtering and uses the previous ellipse if we violate conditions"
     best_idx = int(np.argmax(percents))
     best_ellipse = ellipses[best_idx]
@@ -250,6 +250,7 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug
                 print(f"Using previous ellipse {frame_idx}")
             best_ellipse, prev_x, prev_y = prev_ellipse
             x, y = prev_x, prev_y
+            save = False
         else:
             print("No valid ellipse yet")
             return None, x, y
@@ -263,6 +264,8 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug
                 print(f"Teleporting detected, using previous ellipse {frame_idx}")
             best_ellipse = prev_ellipse[0]
             x, y = prev_ellipse[1], prev_ellipse[2]
+            save = False
+
 
         # Too small
         elif (w * h) < 0.3 * (pw * ph):
@@ -270,8 +273,9 @@ def select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug
                 print(f"Current ellipse too small, using previous ellipse {frame_idx}")
             best_ellipse = prev_ellipse[0]
             x, y = prev_ellipse[1], prev_ellipse[2]
-    
-    return best_ellipse, x, y
+            save = False
+
+    return best_ellipse, x, y, save
 
 def apply_smoothing(best_ellipse, x, y, ema, 
                     x_alpha, y_alpha, width_alpha, height_alpha, rotation_alpha):
@@ -295,8 +299,28 @@ def apply_smoothing(best_ellipse, x, y, ema,
 
     return full_ellipse, ema
 
+def check_blink(frame,
+                full_ellipse,
+                offset_x=0.0,
+                offset_y=0.0,
+                brightness_thresh=100.0):
+
+    (cx, cy), (w, h), ang = full_ellipse
+
+    center = (int(cx + offset_x), int(cy + offset_y))
+    axes   = (int(w/2), int(h/2))
+
+    mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+    cv2.ellipse(mask, center, axes, ang, 0, 360, 255, -1)
+
+    mean_bgr = cv2.mean(frame, mask=mask)[:3]
+    mean_intensity = sum(mean_bgr) / 3.0
+
+    # 5) Blink = region too bright
+    return mean_intensity > brightness_thresh
+
 def display_results(frame, thresholded_images, contour_images, ellipse_images, 
-                   full_ellipse, cx, cy, x, y, frame_idx):
+                    full_ellipse,cx, cy, x, y, frame_idx):
     "Shows frames"
     N = len(thresholded_images)
     H, W = thresholded_images[0].shape
@@ -309,16 +333,16 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
     
     grid_disp = cv2.resize(grid, (1024, 512))
     cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
-    # cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
-    cv2.circle(frame, (int(cx+x), int(cy+y)), 3, (0, 0, 255), -1)
+    cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
+    cv2.circle(frame, (int(cx), int(cy)), 3, (0, 0, 255), -1)
     cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.imshow("Eye Tracking", frame)
 
 def main():
-    video_path = "videos/igor2L.mp4"
+    video_path = "videos/4.mp4"
     TOP = True
-    debug = False
+    debug = True
     x_alpha = .75
     y_alpha = .75
 
@@ -360,7 +384,7 @@ def main():
         
         percents = calculate_ellipse_scores(thresholded_images, ellipses)
         
-        best_ellipse, x, y = select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug=debug)
+        best_ellipse, x, y, _ = select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx, debug=debug)
         
         if best_ellipse is None:
             continue
@@ -373,12 +397,14 @@ def main():
                                             height_alpha=height_alpha,  
                                             rotation_alpha=rotation_alpha) 
         
-        (cx, cy), (w, h), ang = best_ellipse
-        
-        display_results(frame, thresholded_images, contour_images, ellipse_images,
-                       full_ellipse, cx, cy, x, y, frame_idx)
+        (cx, cy), (w, h), ang = full_ellipse
+        if check_blink(frame, full_ellipse):
+                print(f"Blink detected at frame {frame_idx}")
+                cv2.putText(frame, "Blink Detected", (10, 50), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        display_results(frame, thresholded_images, contour_images, ellipse_images, full_ellipse,
+                       cx, cy, x, y, frame_idx)
         frame_idx += 1
-        # should be best? or full idk 
         prev_array.append(full_ellipse)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break

@@ -8,7 +8,7 @@ from math import pi
 from trackingv2 import (coarse_find, remove_bright_spots, find_dark_area, threshold_images, 
                         get_contours, fit_ellipse, check_flip, prepare_frame, process_eye_crop, 
                         generate_ellipse_candidates, calculate_ellipse_scores, select_best_ellipse, 
-                        apply_smoothing, display_results)
+                        apply_smoothing, display_results, check_blink)
 
 if __name__ == "__main__":
     # get first arg
@@ -74,8 +74,11 @@ if __name__ == "__main__":
         
         percents = calculate_ellipse_scores(thresholded_images, ellipses)
         
-        best_ellipse, x, y = select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx)
-        
+        best_ellipse, x, y, save = select_best_ellipse(ellipses, percents, prev_ellipse, x, y, frame_idx)
+
+        if not save:
+            continue
+
         if best_ellipse is None:
             continue
             
@@ -88,7 +91,7 @@ if __name__ == "__main__":
                                             rotation_alpha=rotation_alpha) 
         (cx, cy), (w, h), ang = final_ellipse
         cv2.ellipse(eye_gray, (int(cx-x), int(cy-y)), (int(w/2), int(h/2)), ang, 0, 360, (0, 255, 0), 2)
-
+        
         cv2.imshow("eye_crop", eye_gray)
         frame_idx += 1
         prev_array.append(final_ellipse)
