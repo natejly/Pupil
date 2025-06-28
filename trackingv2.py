@@ -25,7 +25,7 @@ def remove_bright_spots(image, threshold=200, replace=0):
     """replaces any pixels above threshold val """
     mask = image < threshold
     image[~mask] = replace
-    return image
+    return image, mask
 
 # TODO: implement this function
 def remove_thresholded_shadows():
@@ -166,14 +166,18 @@ def prepare_frame(frame, top_half=False):
     else:
         return frame[frame.shape[0] // 2:, :]
 
-def process_eye_crop(frame, eyes):
+def process_eye_crop(frame, eyes, draw_mask=False):
     "Function that crops the eye region"
     x, y, w, h = eyes[0]
     size = max(w, h)
     eye_crop = frame[y:y+size, x:x+size].copy()
-    eye_crop = remove_bright_spots(eye_crop, threshold=220, replace=100)
+    eye_crop, mask = remove_bright_spots(eye_crop, threshold=220, replace=100)
     eye_gray = cv2.cvtColor(eye_crop, cv2.COLOR_BGR2GRAY)
-    return eye_gray, x, y, size
+    if mask is None:
+        mask = np.zeros_like(eye_gray, dtype=np.uint8)
+    if not draw_mask:
+        return eye_gray, x, y, size
+    return eye_gray, x, y, size, mask
 
 def generate_ellipse_candidates(eye_gray, dark_val, thresholds):
     "Function that makes the possible ellipses"
@@ -331,7 +335,7 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
         grid[2*H :3*H, i*W:(i+1)*W] = ellipse_images[i]
     
     grid_disp = cv2.resize(grid, (1024, 512))
-    # cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
+    cv2.imshow("Threshold | Contour | Ellipse", grid_disp)
     cv2.ellipse(frame, full_ellipse, (0, 255, 0), 2)
     cv2.circle(frame, (int(cx), int(cy)), 3, (0, 0, 255), -1)
     cv2.putText(frame, f"Frame: {frame_idx}", (10, 30), 
@@ -340,6 +344,7 @@ def display_results(frame, thresholded_images, contour_images, ellipse_images,
     cv2.imshow("Eye Tracking", frame)
 
 def main():
+
     video_path = "videos/igor1.mp4"
     TOP = True
     debug = True

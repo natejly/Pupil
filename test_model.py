@@ -9,12 +9,12 @@ import tensorflow as tf
 from trackingv2 import coarse_find, process_eye_crop
 
 # Load TFLite interpreters
-interpreter_x = tf.lite.Interpreter(model_path="eye_tracking_model.tflite")
+interpreter_x = tf.lite.Interpreter(model_path="eye_tracking_model_x.tflite")
 interpreter_x.allocate_tensors()
 input_details_x = interpreter_x.get_input_details()
 output_details_x = interpreter_x.get_output_details()
 
-interpreter_y = tf.lite.Interpreter(model_path="eye_tracking_modelv.tflite")
+interpreter_y = tf.lite.Interpreter(model_path="eye_tracking_model_y.tflite")
 interpreter_y.allocate_tensors()
 input_details_y = interpreter_y.get_input_details()
 output_details_y = interpreter_y.get_output_details()
@@ -22,20 +22,20 @@ output_details_y = interpreter_y.get_output_details()
 print("TFLite models loaded.")
 
 # Video capture
-cap = cv2.VideoCapture("videos/igor1.mp4")
+cap = cv2.VideoCapture("videos/igor2L.mp4")
 if not cap.isOpened():
     raise IOError("Cannot open video")
 
 # Configuration
-top_half = True  # change to True to track top half
+top_half = False  # change to True to track top half
 fps = cap.get(cv2.CAP_PROP_FPS)
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter('output_video.mp4', fourcc, fps, (frame_width, frame_height))
 
-x_alpha = .75
-y_alpha = .75
+x_alpha = .5
+y_alpha = .5
 
 ema = None
 prev_eyes = None
@@ -77,7 +77,6 @@ while True:
     interpreter_y.invoke()
     py = interpreter_y.get_tensor(output_details_y[0]['index'])[0][0] * size
 
-    # TODO: work on smoothing idk why it makes it worse rn
     current = np.array([px+x, py+y], dtype=np.float32)
     alphas = np.array([x_alpha, y_alpha], dtype=np.float32)
     if ema is None:
